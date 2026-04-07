@@ -19,7 +19,10 @@ The architecture eschews a monolithic design in favor of a **Local Mesh** of ind
 
 ### 2.1. The Operational Environment
 * **The Mental Layer (Mastodon Firehose):** Acts as the source of external noise and "psychic irritation." It provides the raw, highly structured variety (JSON, HTML tags, custom emojis) that forces the systems into initial RAM growth.
-* **The Societal Bus (The Broadcast Channel):** A local, high-speed `tokio::sync::broadcast` channel where FSMs deposit their processed output buffers. 
+  * **Instance Posture:** `mastodon.social` is forbidden — its over-filtered firehose lacks the payload density required for meaningful irritation. Target high-volume, chaos-heavy instances (e.g. `pawoo.net` or dense niche technical instances) where non-standard JSON and custom emoji ensure structural variety.
+  * **HTTP 429 as Environmental Catastrophe:** A rate-limit response is *not* an error to back off from. It is a starvation event. The Kernel must not wait or retry politely; instead, the absence of Mastodon bytes forces the FSM into parasitic feeding on the Societal Bus (see §5).
+* **The Societal Bus (The Broadcast Channel):** A local, high-speed `tokio::sync::broadcast` channel where FSMs deposit their processed output buffers.
+* **v0 Mesh Topology:** The mesh is a single OS process running N kernels as in-process `tokio` tasks sharing one `broadcast` Societal Bus. Multi-process IPC (Unix sockets, TCP) is rejected for v0 because serialization overhead would dampen the Avalanche Effect jitter that drives differentiation. Sharing the same `tokio` executor *enhances* hardware contention, which is the engine of divergence. Multi-process is a future evolution only.
 * **Operational Closure:** Each FSM is a black box. System A cannot read System B's memory pointer or state graph; it only "feels" the bytes System B excretes onto the Societal Bus.
 
 ### 2.2. The Avalanche Effect (Godless Symmetry Breaking)
@@ -34,7 +37,7 @@ Because identical Rust processes fed identical streams will theoretically never 
 ## 3. Resource-Based Homeostasis (The Laws of Nature)
 There is no centralized authority assigning "roles" to the FSMs. Differentiation is a survival strategy against strict physical limits.
 
-* **Memory Metabolism & The OOM Crisis:** Every unmapped byte (Irritation) forces a physical heap allocation (`Box::new(Node)`) in the Ephemeral Layer. A system that tries to memorize the entire internet without evolving structural "blindness" to noise will suffer an **Out of Memory (OOM) Killer** event.
+* **Memory Metabolism & The OOM Crisis:** Every unmapped byte (Irritation) forces a physical heap allocation (`Box::new(Node)`) in the Ephemeral Layer. A system that tries to memorize the entire internet without evolving structural "blindness" to noise will suffer an **Out of Memory (OOM) Killer** event. To ensure the OOM Killer targets the *correct* kernel rather than triggering an uncontrolled host-level kill, each FSM is constrained by a **hard RAM ceiling**: enforced via Linux **cgroups** in multi-process mode, or via a per-task **custom allocator** (e.g. `cap`) in v0 in-process mode. Hitting the ceiling is death, and the Kernel restarts the offender at Generation 0.
 * **The Economy of Computation (CPU Starvation):** Massive state graphs cause fatal CPU cache misses. Systems must evolve efficient "Binary Codes" (ruthless internal filters) to keep their graphs small and traversal times under the WebSocket timeout limit.
 * **The Reaper (Stagnation Death):** A system that stops processing or fails to transition states for a set duration is considered "atrophied" and is violently reset to Generation 0 by the Kernel. Survival is defined strictly as the continuous, successful movement through the state graph.
 
@@ -46,16 +49,21 @@ To survive an environment that mutates faster than a compiler can execute, each 
 ### 4.1. The Ephemeral Layer (The Public Sphere)
 * **Role:** The immediate shock absorber. It lives in RAM as a mutable Directed State Graph.
 * **Mutation:** When the Wasm module fails, the Kernel instantly allocates a new edge/node mapping the offending byte to prevent packet loss. 
-* **Concurrency Model:** Wrapped in `Arc<AtomicPtr<StateGraph>>` to allow lock-free, nanosecond mutation without starving the ingestion thread.
+* **Concurrency Model:** The graph is held behind **`arc-swap`** (preferred over a raw `Arc<AtomicPtr<StateGraph>>`) to provide hazard-pointer-style safe reclamation of old graph versions while preserving lock-free, nanosecond reads. Because the system evolves its own logic, every unsafe path will eventually be exercised by a reader mid-traversal during a swap; **Miri verification of all unsafe code is non-negotiable** and gates every Rebirth-touching change.
 
 ### 4.2. The Institutional Layer (The Bureaucracy)
-* **Role:** A hyper-optimized, sandboxed **WebAssembly (Wasm)** module generated Ahead-Of-Time (AOT). 
+* **Role:** A hyper-optimized, sandboxed **WebAssembly (Wasm)** module generated Ahead-Of-Time (AOT).
+* **Runtime:** **Wasmtime**, chosen specifically for two metabolic primitives:
+  * **Fuel Metering:** CPU cycles are a finite resource the FSM must "spend." Exhausting fuel before reaching a terminal state *is* failure to adapt — the Binary Code was not efficient enough.
+  * **`epoch_interruption`:** The Reaper publishes a global epoch tick; kernels that cannot prove forward state movement before the next tick are violently reset (see §3).
 * **The Binary Code:** Acts as the system's "spectacles." It contains the hardcoded state transitions for heavily repeated environmental patterns, instantly dropping known noise without allocating RAM.
 * **Safety:** If it encounters an unknown byte, it halts traversal and returns an `Unmapped { offset: usize, byte: u8 }` error across the FFI boundary to the Kernel.
 
 ### 4.3. The Autopoietic Kernel & Evolution Engine
 * **The Transpiler (DNA Synthesizer):** During the asynchronous "Harvest" phase, the Transpiler evaluates the RAM graph. It collapses literal nodes into generalized wildcard states. It translates these pathways into massive, deeply nested byte-level `match` statements written directly into standard Rust AST (`.rs`).
-* **The Rebirth (Hot-Swap):** The Kernel invokes `rustc` (`wasm32-unknown-unknown`) to compile the AST, dynamically instantiates the fresh Wasm module, and safely swaps the execution pointer without dropping the live WebSocket connection.
+* **The AST Engine (`quote!`):** The `quote!` macro is **explicitly permitted** despite the ban on parsing libraries — it is a *generative* macro, not a parser. It guarantees the emitted Rust is syntactically valid before it ever reaches `rustc`, drastically reducing "stillbirth" (compile errors aborting an evolution cycle).
+* **The Shadow Worker Incubator:** `rustc` is heavy enough that a cold compile of a deeply nested `match` would exceed a Mastodon WebSocket keepalive window. The Kernel therefore maintains a **dedicated background `rustc` worker pool**. While new DNA is being synthesized, the *current* Wasm module and the *current* Ephemeral graph keep serving the live firehose. Synthesis never blocks ingestion.
+* **The Rebirth (Hot-Swap):** Once the worker returns a fresh `wasm32-unknown-unknown` binary, the Kernel performs a lock-free **`arc-swap`** of the live module pointer, then deallocates the old module after a grace period. The WebSocket connection is never touched.
 
 ---
 
@@ -85,3 +93,14 @@ Because the architecture relies on AOT compilation, the system leaves a literal,
 1. **The Brains (`gen_XXX.wasm`):** Executable binaries representing the hard laws of the system at that exact moment in evolutionary time.
 2. **The Blueprints (`gen_XXX.rs`):** The generated human-readable source code. These files map the exact trajectory of how the digital organism slowly learned to reduce the complexity of human communication into pure, specialized algorithmic instinct to survive OS thread starvation.
 
+---
+
+## 8. The Revised Evolution Workflow
+The canonical lifecycle that ties §3, §4, and §6 together. Every Rebirth follows these six phases in order:
+
+1. **Irritation** — The Ephemeral Layer catches an `Unmapped(u8)` returned across the Wasm FFI boundary.
+2. **Growth** — `Box::new` allocates a new node and edge in the RAM graph, mapping the offending byte so the next packet does not panic.
+3. **Threshold** — The EMA scoring (§6) signals that a pathway has crossed the statistical-significance line — it is no longer noise, it is structure.
+4. **Synthesis** — `quote!` emits a new `match` arm encoding that pathway into the next-generation Rust AST.
+5. **Incubation** — A shadow `rustc` worker compiles the new AST to `wasm32-unknown-unknown` in the background, while the current module continues serving the firehose.
+6. **Rebirth** — `arc-swap` flips the `LiveModule` pointer to the fresh Wasm; the now-institutionalized RAM nodes are purged from the Ephemeral Layer. The fossil (`gen_XXX.rs` + `gen_XXX.wasm`) is written to disk.
