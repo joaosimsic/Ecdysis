@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/kernel",
+    "crates/evolution",
+    "crates/ephemeral",
+    "crates/transpiler",
+    "crates/incubator",
+    "crates/wasm-host",
+    "crates/firehose",
+    "crates/fsm-runtime",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "signal"] }
+arc-swap = "1"
+quote = "1"
+proc-macro2 = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -1,0 +1,4 @@
+[package]
+name = "evolution"
+version = "0.0.1"
+edition.workspace = true

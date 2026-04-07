@@ -1,0 +1,4 @@
+[package]
+name = "firehose"
+version = "0.0.1"
+edition.workspace = true
