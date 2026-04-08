@@ -7,3 +7,6 @@ edition.workspace = true
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+firehose = { path = "../firehose" }
+wasm-host = { path = "../wasm-host" }
+cap = "0.1"

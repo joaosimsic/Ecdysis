@@ -2,3 +2,13 @@
 name = "evolution"
 version = "0.0.1"
 edition.workspace = true
+
+[dependencies]
+arc-swap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+ephemeral = { path = "../ephemeral" }
+incubator = { path = "../incubator" }
+transpiler = { path = "../transpiler" }
+wasm-host = { path = "../wasm-host" }
+wasmtime = { version = "26", default-features = false, features = ["cranelift", "runtime", "std", "parallel-compilation"] }

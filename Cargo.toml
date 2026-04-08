@@ -16,7 +16,7 @@ edition = "2021"
 license = "MIT"
 
 [workspace.dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "signal", "fs"] }
 arc-swap = "1"
 quote = "1"
 proc-macro2 = "1"

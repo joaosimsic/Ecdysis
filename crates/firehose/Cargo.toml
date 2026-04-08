@@ -2,3 +2,9 @@
 name = "firehose"
 version = "0.0.1"
 edition.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+tracing = { workspace = true }

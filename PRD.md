@@ -95,8 +95,22 @@ Each crate maps 1:1 to a numbered section of `CLAUDE.md` so contributors can nav
 ## 5. Verification
 - **Unit**: `cargo test -p ephemeral` covers traversal + EMA decay math.
 - **Miri**: `cargo +nightly miri test -p ephemeral` — gates every PR touching unsafe / `arc-swap` paths.
-- **Integration**: `cargo run -p kernel -- --instances 4 --firehose pawoo.net` and assert (a) `fossils/gen_001.wasm` appears within ~2 min, (b) RSS for each kernel stays below the `cap` ceiling, (c) at least one parasitic shortcut is logged (M8 criterion).
-- **Negative**: starting kernel with `--firehose mastodon.social` must exit non-zero at config validation.
+- **Integration**: `ECDYSIS_INSTANCES=4 ECDYSIS_FIREHOSE=pawoo.net cargo run -p kernel` and assert (a) `fossils/gen_001.wasm` appears within ~2 min, (b) RSS for each kernel stays below the `cap` ceiling, (c) at least one parasitic shortcut is logged (M8 criterion).
+- **Negative**: starting kernel with `ECDYSIS_FIREHOSE=mastodon.social` must exit non-zero at config validation.
+
+### Configuration (Environment Variables)
+All runtime configuration is read from environment variables at kernel startup (no CLI flags). Parsing and validation happen once in `kernel::main` before any task is spawned; invalid or missing required vars cause non-zero exit with a `tracing::error!`.
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `ECDYSIS_INSTANCES` | yes | — | N kernels (FSM tasks) to spawn (§2.1). |
+| `ECDYSIS_FIREHOSE` | yes | — | Mastodon instance host; `mastodon.social` rejected (§2.1). |
+| `ECDYSIS_RAM_CEILING_MIB` | no | `256` | Per-task `cap` allocator ceiling (§3, M7). |
+| `ECDYSIS_FOSSIL_DIR` | no | `./fossils` | Output dir for `gen_XXX.{rs,wasm}` (§7). |
+| `ECDYSIS_EPOCH_TICK_MS` | no | `1000` | Reaper epoch interval (§4.2). |
+| `RUST_LOG` | no | `info` | `tracing-subscriber` filter. |
+
+A `.env` file at repo root is loaded via `dotenvy` for local dev convenience; CI sets vars directly.
 
 ## 6. Out of Scope for v0
 - Multi-process IPC (Unix sockets/TCP) — explicitly deferred per §2.1.

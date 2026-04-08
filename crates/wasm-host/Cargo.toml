@@ -2,3 +2,8 @@
 name = "wasm-host"
 version = "0.0.1"
 edition.workspace = true
+
+[dependencies]
+wasmtime = { version = "26", default-features = false, features = ["cranelift", "runtime", "std", "parallel-compilation"] }
+wat = "1"
+tracing = { workspace = true }
