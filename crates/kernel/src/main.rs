@@ -17,16 +17,21 @@
 //!     since the previous tick is "atrophied" (§3) and is force-aborted; the
 //!     supervisor then respawns it from Generation 0.
 
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use cap::Cap;
+use ephemeral::{LiveGraph, ROOT};
+use evolution::{LiveModule, Rebirth};
 use firehose::{FirehoseConfig, FirehoseHandle, Health};
+use incubator::IncubatorPool;
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
-use wasm_host::{build_engine, Engine};
+use transpiler::SynthesizeOptions;
+use wasm_host::{build_engine, gen_000_wasm, Engine, HostError, Module, StepOutcome, WasmHost};
 
 /// Process-wide hard RAM ceiling (§3, §M7). The per-task arena counters above
 /// are the *primary* enforcement; this `cap` allocator is the safety net that
@@ -39,6 +44,36 @@ const BUS_CAPACITY: usize = 1024;
 /// Capacity of the in-process firehose fan-out broadcast (in bytes).
 /// Kept small so contention amplifies the Avalanche Effect.
 const FIREHOSE_FANOUT_CAPACITY: usize = 256;
+
+/// Per-`process()` fuel budget (§4.2). The Wasm step machine is a tiny tight
+/// loop over `<= 64` bytes, so a million instructions is luxurious — anything
+/// less and we'd OOF on the very first oversized payload.
+const FUEL_PER_CALL: u64 = 1_000_000;
+/// Epoch ticks granted per `process()` call. `1` means "must finish before the
+/// next Reaper tick", which is the strictest deadline `wasmtime` will accept.
+const EPOCH_DEADLINE: u64 = 1;
+/// EMA hit increment (§6). Higher = faster institutionalization, lower = more
+/// conservative survival threshold. 0.25 is a neutral starting point.
+const EMA_ALPHA: f64 = 0.25;
+/// EMA decay factor applied each Harvest tick. `score *= 1 - lambda`.
+const HARVEST_LAMBDA: f64 = 0.10;
+/// Edges below this score are purged on Harvest. Anything above is a candidate
+/// for institutionalization in the next Rebirth.
+const HARVEST_THRESHOLD: f64 = 0.05;
+/// Number of excretion flushes between Harvest decay passes.
+const HARVEST_INTERVAL: u64 = 32;
+/// Number of excretion flushes between Rebirth attempts. Must be >> harvest so
+/// the EMA has time to differentiate signal from noise before institutionalising.
+const REBIRTH_INTERVAL: u64 = 256;
+/// Minimum surviving edges in the ephemeral graph before a Rebirth is worth
+/// triggering — below this, `rustc` invocation cost dominates structural gain.
+const REBIRTH_MIN_EDGES: usize = 8;
+/// EMA threshold passed to the transpiler — edges below it are *not* baked
+/// into the next-generation Wasm and stay in the Ephemeral Layer.
+const SYNTHESIZE_EMA_THRESHOLD: f64 = 0.5;
+/// Grace period before the previous `LiveModule` is dropped after a hot-swap.
+/// Must outlast any in-flight `WasmHost::process()` call against it.
+const REBIRTH_GRACE: Duration = Duration::from_millis(250);
 
 /// A frame on the Societal Bus. In v0 these are raw byte excretions (§5).
 #[derive(Clone, Debug)]
@@ -141,6 +176,28 @@ async fn main() {
         }
     };
 
+    // ---- Bootstrap Wasm bytes (gen_000 WAT) shared across all FSMs. ------
+    // Compiling the WAT once at boot keeps respawn cheap; we hand the raw
+    // bytes to each supervisor so it can build a fresh `Module` per
+    // generation (one `Module` per `Engine` is the wasmtime norm).
+    let bootstrap_bytes = match gen_000_wasm() {
+        Ok(b) => b,
+        Err(e) => {
+            error!("gen_000 wat compile failed: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    // ---- Shared Incubator. ----------------------------------------------
+    // One process-wide rustc worker pool serves every FSM's Rebirth pipeline
+    // (§4.3). Capping concurrent `rustc` workers prevents N FSMs from each
+    // forking a compiler and trampling the host. The fossil dir is
+    // `./fossils` by convention; the incubator creates it on first write.
+    let incubator_workers: usize = parse_env("ECDYSIS_INCUBATOR_WORKERS", 2);
+    let fossil_dir =
+        std::env::var("ECDYSIS_FOSSIL_DIR").unwrap_or_else(|_| "fossils".to_string());
+    let pool = IncubatorPool::new(&fossil_dir, incubator_workers);
+
     // ---- Bus + firehose fan-out wiring (unchanged from M2). --------------
     let (bus_tx, _bus_rx) = broadcast::channel::<BusFrame>(BUS_CAPACITY);
     let (firehose_tx, _firehose_rx) = broadcast::channel::<u8>(FIREHOSE_FANOUT_CAPACITY);
@@ -158,6 +215,9 @@ async fn main() {
         let bus_tx = bus_tx.clone();
         let firehose_tx = firehose_tx.clone();
         let health = health.clone();
+        let engine = engine.clone();
+        let pool = pool.clone();
+        let bootstrap_bytes = bootstrap_bytes.clone();
         handles.push(tokio::spawn(supervisor(
             id,
             heart,
@@ -165,6 +225,9 @@ async fn main() {
             bus_tx,
             firehose_tx,
             health,
+            engine,
+            pool,
+            bootstrap_bytes,
         )));
     }
     drop(bus_tx);
@@ -203,9 +266,13 @@ async fn firehose_fanout(
 }
 
 /// Supervisor: owns one FSM slot. Spawns a child task, awaits its death (any
-/// cause), and respawns it at Generation 0 with a fresh arena. Death never
+/// cause), and respawns it at Generation 0 with a fresh arena, a fresh
+/// `LiveGraph`, and a fresh `Rebirth` pinned to gen_000. Death never
 /// propagates to the bus — we drop the child's senders before respawning so
-/// no half-emitted frame escapes (§M7).
+/// no half-emitted frame escapes (§M7). The shared `IncubatorPool` survives
+/// respawns so the fossil-record generation counter (§7) keeps advancing
+/// monotonically across deaths.
+#[allow(clippy::too_many_arguments)]
 async fn supervisor(
     id: usize,
     heart: Arc<Heartbeat>,
@@ -213,16 +280,37 @@ async fn supervisor(
     bus_tx: broadcast::Sender<BusFrame>,
     firehose_tx: broadcast::Sender<u8>,
     health: watch::Receiver<Health>,
+    engine: Engine,
+    pool: IncubatorPool,
+    bootstrap_bytes: Arc<[u8]>,
 ) {
     let mut generation: u64 = 0;
     loop {
         let arena = Arc::new(FsmArena::new(ceiling));
+
+        // Per-generation Ephemeral Layer (§4.1) and Rebirth pipeline (§4.3).
+        // Both reset on death — a respawned FSM is born blank-slate per
+        // §M7 ("restarts that FSM at Generation 0"). The `IncubatorPool`,
+        // however, is shared and its generation counter survives the reset
+        // so on-disk fossils remain monotonic.
+        let graph = Arc::new(LiveGraph::new());
+        let rebirth = match build_rebirth(&engine, &pool, &bootstrap_bytes) {
+            Ok(r) => r,
+            Err(e) => {
+                error!(fsm = id, "supervisor: rebirth init failed: {e} — retrying");
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                continue;
+            }
+        };
+
         let bus_tx_child = bus_tx.clone();
         let bus_rx_child = bus_tx.subscribe();
         let firehose_rx_child = firehose_tx.subscribe();
         let health_child = health.clone();
         let heart_child = heart.clone();
         let arena_child = arena.clone();
+        let graph_child = graph.clone();
+        let rebirth_child = rebirth.clone();
 
         info!(fsm = id, gen = generation, "supervisor: spawning");
         let child: JoinHandle<()> = tokio::spawn(fsm_task(
@@ -234,6 +322,8 @@ async fn supervisor(
             bus_rx_child,
             firehose_rx_child,
             health_child,
+            graph_child,
+            rebirth_child,
         ));
 
         match child.await {
@@ -392,7 +482,45 @@ impl ShortcutLearner {
     }
 }
 
+/// Build a fresh `Rebirth` pinned to the gen_000 bootstrap. Called once per
+/// supervisor respawn (§M7) so each generation starts from the same blank
+/// Wasm — only the shared `IncubatorPool`'s generation counter accumulates
+/// across deaths, preserving the §7 fossil record monotonicity.
+fn build_rebirth(
+    engine: &Engine,
+    pool: &IncubatorPool,
+    bootstrap_bytes: &[u8],
+) -> Result<Rebirth, String> {
+    let module = Module::new(engine, bootstrap_bytes)
+        .map_err(|e| format!("bootstrap module: {e}"))?;
+    let bootstrap = LiveModule {
+        generation: 0,
+        module,
+        institutionalized: BTreeSet::new(),
+    };
+    Ok(Rebirth::new(engine.clone(), pool.clone(), bootstrap, REBIRTH_GRACE))
+}
+
 /// One FSM task. The feeding strategy is an explicit branch on [`Health`].
+///
+/// **M3-M8 wiring (the loop the codebase-structure doc called out as missing):**
+///
+/// 1. Each excretion buffer (after it fills, *before* it ships to the bus) is
+///    fed through `WasmHost::process()`. The Wasm module is the Institutional
+///    Layer (§4.2): if it returns `Terminal(_)` the buffer was already
+///    structurally known.
+/// 2. If the Wasm returns `Unmapped { offset, byte }` (§8 step 1: Irritation),
+///    the FSM grows the Ephemeral graph (§8 step 2: Growth) by allocating a
+///    fresh edge from whichever node `bytes[..offset]` walks to.
+/// 3. Successfully-traversed ephemeral edges get an EMA hit (§6).
+/// 4. Every [`HARVEST_INTERVAL`] flushes, the graph is decayed (§6 + §8 step 3).
+/// 5. Every [`REBIRTH_INTERVAL`] flushes, a background `rebirth.rebirth()` is
+///    spawned (§4.3 + §8 steps 4-6). The current Wasm keeps serving the
+///    firehose during the rustc compile; the swap is lock-free via `arc-swap`.
+///
+/// The fuel-out / epoch-deadline traps are treated as Irritation at offset 0
+/// — a Binary Code that ran out of metabolism is, by definition, not yet
+/// efficient enough for whatever it just saw.
 #[allow(clippy::too_many_arguments)]
 async fn fsm_task(
     id: usize,
@@ -403,21 +531,65 @@ async fn fsm_task(
     mut bus_rx: broadcast::Receiver<BusFrame>,
     mut firehose_rx: broadcast::Receiver<u8>,
     mut health: watch::Receiver<Health>,
+    graph: Arc<LiveGraph>,
+    rebirth: Rebirth,
 ) {
-    info!(fsm = id, gen = generation, "online");
+    // Instantiate this generation's WasmHost from whatever module is currently
+    // live in the Rebirth pipeline. On Gen 0 that's gen_000; after a hot-swap,
+    // a fresh call to `instantiate()` would pick up the newer module — we do
+    // that lazily after every Rebirth completes (see `current_module_gen` below).
+    let mut host = match rebirth.instantiate(FUEL_PER_CALL, EPOCH_DEADLINE) {
+        Ok(h) => h,
+        Err(e) => {
+            error!(fsm = id, gen = generation, "wasm instantiate failed: {e} — surrendering");
+            return;
+        }
+    };
+    let mut current_module_gen = rebirth.live().generation;
+
+    info!(fsm = id, gen = generation, wasm_gen = current_module_gen, "online");
     let mut excretion: Vec<u8> = Vec::with_capacity(64);
     let mut learner = ShortcutLearner::new();
+    let mut flush_count: u64 = 0;
+    // Shared with the background Rebirth task so we can clear it after the
+    // spawned future completes (success or failure). One outstanding Rebirth
+    // per FSM at a time — a slow `rustc` compile cannot stack pipelines.
+    let rebirth_inflight = Arc::new(AtomicBool::new(false));
 
     loop {
         heart.bump();
 
-        // Cooperative arena check. In M3+ the Ephemeral graph will be the
-        // primary contributor; for now we charge each excretion buffer push
-        // so the death/respawn path is exercised end-to-end.
+        // Cooperative arena check. The Ephemeral graph is the primary
+        // contributor: each `grow` we trigger below charges its allocation
+        // here, so a runaway hallucination of new edges is what eventually
+        // pushes the FSM past its ceiling and into respawn.
         if !arena.alloc(0) {
             warn!(fsm = id, gen = generation, used = arena.used(), "arena exhausted — surrendering");
             return;
         }
+
+        // If the live module has been hot-swapped under us by a background
+        // Rebirth (§4.3), re-instantiate against the new generation. Cheap:
+        // wasmtime `Module` is `Arc` internally and `Store` creation is fast.
+        let live = rebirth.live();
+        if live.generation != current_module_gen {
+            match rebirth.instantiate(FUEL_PER_CALL, EPOCH_DEADLINE) {
+                Ok(new_host) => {
+                    info!(
+                        fsm = id,
+                        from = current_module_gen,
+                        to = live.generation,
+                        "fsm: picking up hot-swapped module"
+                    );
+                    host = new_host;
+                    current_module_gen = live.generation;
+                }
+                Err(e) => {
+                    warn!(fsm = id, "fsm: hot-swap re-instantiate failed: {e}");
+                }
+            }
+        }
+        drop(live);
 
         let mode = *health.borrow_and_update();
         match mode {
@@ -433,9 +605,15 @@ async fn fsm_task(
                             }
                             excretion.push(b);
                             if excretion.len() >= 64 {
-                                learner.on_flush(id);
-                                let frame = BusFrame { origin: id, bytes: std::mem::take(&mut excretion) };
-                                let _ = bus_tx.send(frame);
+                                process_and_flush(
+                                    id, generation, &graph, &arena, &mut host,
+                                    &mut excretion, &mut learner, &bus_tx,
+                                );
+                                flush_count += 1;
+                                maybe_harvest_and_rebirth(
+                                    id, flush_count, &graph, &rebirth,
+                                    &rebirth_inflight,
+                                );
                             }
                         }
                         Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -455,6 +633,147 @@ async fn fsm_task(
             }
         }
     }
+}
+
+/// Run an excretion buffer through the Wasm Institutional Layer (§4.2), then
+/// fold the outcome back into the Ephemeral graph and ship the buffer to the
+/// Societal Bus. This is the §8 Irritation→Growth path.
+#[allow(clippy::too_many_arguments)]
+fn process_and_flush(
+    id: usize,
+    generation: u64,
+    graph: &LiveGraph,
+    arena: &FsmArena,
+    host: &mut WasmHost,
+    excretion: &mut Vec<u8>,
+    learner: &mut ShortcutLearner,
+    bus_tx: &broadcast::Sender<BusFrame>,
+) {
+    // (1) Wasm Institutional Layer pass.
+    match host.process(excretion) {
+        Ok(StepOutcome::Terminal(_node)) => {
+            // §6 EMA: any ephemeral edges that happen to mirror this path
+            // get a hit — they may yet differentiate enough to survive the
+            // next Harvest and become institutionalized in their own right.
+            record_ephemeral_hits(graph, excretion);
+        }
+        Ok(StepOutcome::Unmapped(u)) => {
+            // §8 step 1 → 2: Irritation → Growth.
+            grow_ephemeral(graph, arena, excretion, u.offset);
+        }
+        Err(HostError::OutOfFuel) | Err(HostError::EpochDeadline) => {
+            // The Binary Code couldn't metabolize this buffer in its budget.
+            // Treat as Irritation at the start: grow a single node mapping
+            // the first byte and let the next Harvest decide if it matters.
+            warn!(fsm = id, gen = generation, "wasm metabolism exhausted — growing at offset 0");
+            grow_ephemeral(graph, arena, excretion, 0);
+        }
+        Err(e) => {
+            warn!(fsm = id, gen = generation, "wasm process error: {e}");
+        }
+    }
+
+    // (2) Excretion → Bus (unchanged from M2 — §5 step 2).
+    learner.on_flush(id);
+    let frame = BusFrame { origin: id, bytes: std::mem::take(excretion) };
+    let _ = bus_tx.send(frame);
+}
+
+/// §8 step 2: Growth. Walks the ephemeral graph as far as it can with
+/// `bytes[..offset]`, then allocates a new edge mapping `bytes[offset]` from
+/// whichever node it landed on. If `offset` is past the end of the buffer
+/// (wasmtime sometimes reports terminal positions), this is a no-op.
+fn grow_ephemeral(graph: &LiveGraph, arena: &FsmArena, bytes: &[u8], offset: usize) {
+    if offset >= bytes.len() {
+        return;
+    }
+    let byte = bytes[offset];
+    // Charge the arena for the new node + edge before the mutate to keep
+    // accounting honest with the Reaper.
+    let _ = arena.alloc(std::mem::size_of::<ephemeral::Node>() + std::mem::size_of::<ephemeral::Edge>());
+    graph.mutate(|g| {
+        let from = g.traverse(&bytes[..offset]).unwrap_or(ROOT);
+        // If the edge already exists (race with a concurrent grow), bump its
+        // EMA instead of double-allocating.
+        if g.edges.contains_key(&(from, byte)) {
+            g.record_hit(from, byte, EMA_ALPHA);
+        } else {
+            g.grow(from, byte);
+        }
+    });
+}
+
+/// §6: walk the ephemeral graph in lock-step with `bytes` and bump EMA on
+/// every edge that matches. Stops at the first miss — the Wasm side already
+/// handled the rest.
+fn record_ephemeral_hits(graph: &LiveGraph, bytes: &[u8]) {
+    graph.mutate(|g| {
+        let mut cur = ROOT;
+        for &byte in bytes {
+            match g.edges.get(&(cur, byte)) {
+                Some(edge) => {
+                    let target = edge.target;
+                    g.record_hit(cur, byte, EMA_ALPHA);
+                    cur = target;
+                }
+                None => break,
+            }
+        }
+    });
+}
+
+/// Periodic Harvest decay (§6) + background Rebirth trigger (§4.3, §8 4-6).
+/// `rebirth_inflight` is a single-slot guard shared with the background task:
+/// only one outstanding Rebirth per FSM at a time, so a slow `rustc` compile
+/// cannot stack concurrent pipelines and starve the host.
+fn maybe_harvest_and_rebirth(
+    id: usize,
+    flush_count: u64,
+    graph: &Arc<LiveGraph>,
+    rebirth: &Rebirth,
+    rebirth_inflight: &Arc<AtomicBool>,
+) {
+    if flush_count.is_multiple_of(HARVEST_INTERVAL) {
+        graph.mutate(|g| g.harvest(HARVEST_LAMBDA, HARVEST_THRESHOLD));
+    }
+
+    if !flush_count.is_multiple_of(REBIRTH_INTERVAL) {
+        return;
+    }
+    // Atomic single-slot guard. compare_exchange returns Err if another
+    // Rebirth is already running, in which case we silently skip this tick.
+    if rebirth_inflight
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+        .is_err()
+    {
+        return;
+    }
+    let snapshot = graph.load();
+    if snapshot.edge_count() < REBIRTH_MIN_EDGES {
+        rebirth_inflight.store(false, Ordering::Release);
+        return;
+    }
+    drop(snapshot);
+
+    let rebirth = rebirth.clone();
+    let graph = graph.clone();
+    let inflight = rebirth_inflight.clone();
+    tokio::spawn(async move {
+        let result = rebirth
+            .rebirth(&graph, SynthesizeOptions { ema_threshold: SYNTHESIZE_EMA_THRESHOLD })
+            .await;
+        // Always release the slot, even on failure — otherwise a single
+        // Stillbirth would freeze the evolution pipeline forever.
+        inflight.store(false, Ordering::Release);
+        match result {
+            Ok(live) => info!(
+                fsm = id,
+                generation = live.generation,
+                "rebirth: §8 cycle complete"
+            ),
+            Err(e) => warn!(fsm = id, "rebirth failed: {e}"),
+        }
+    });
 }
 
 /// Receive a bus frame from a peer, feed it to the parasitic-shortcut

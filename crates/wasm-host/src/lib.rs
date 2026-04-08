@@ -20,8 +20,8 @@
 //!     ticks is forcibly halted (§3 Reaper, §4.2).
 
 use std::sync::Arc;
-pub use wasmtime::Engine;
-use wasmtime::{Config, Instance, Memory, Module, Store, StoreLimits, StoreLimitsBuilder, TypedFunc};
+pub use wasmtime::{Engine, Module};
+use wasmtime::{Config, Instance, Memory, Store, StoreLimits, StoreLimitsBuilder, TypedFunc};
 
 /// Decoded `Unmapped` returned across the FFI boundary. Mirrors
 /// `ephemeral::Unmapped` deliberately — we keep this crate dependency-free of

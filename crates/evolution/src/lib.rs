@@ -131,8 +131,11 @@ impl Rebirth {
         let snapshot = graph.load();
         let institutionalized = collect_institutionalized(&snapshot, opts.ema_threshold);
 
-        // (2) Synthesis: emit Rust AST via quote!.
-        let source = synthesize(&snapshot, opts);
+        // (2) Synthesis: emit Rust AST via quote!. We stringify here, *before*
+        // the incubator await, so the `proc_macro2::TokenStream` (which is
+        // `!Send`) never enters this async function's state machine. Without
+        // this, the kernel cannot `tokio::spawn(rebirth.rebirth(..))`.
+        let source = synthesize(&snapshot, opts).to_string();
 
         // (3) Incubation: shadow rustc worker writes the fossils and returns
         // the wasm path. The live module is untouched throughout this await.

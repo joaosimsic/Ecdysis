@@ -42,7 +42,6 @@
 //! decide whether to swap or to abort. We do not silently kill `rustc`; a
 //! killed compile is the worst possible Stillbirth.
 
-use proc_macro2::TokenStream;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -154,20 +153,29 @@ impl IncubatorPool {
     /// run `rustc`, return the compiled artifact's path. The caller (the
     /// evolution pipeline) is responsible for the `arc-swap` of the live
     /// module — see §4.3 / M6.
-    pub async fn incubate(&self, source: TokenStream) -> Result<CompiledGen, IncubatorError> {
+    /// Incubate one generation. `source` is the *already-stringified* Rust
+    /// crate root (typically `transpiler::synthesize(..).to_string()`).
+    ///
+    /// We deliberately take `String` rather than `proc_macro2::TokenStream`
+    /// here: `TokenStream` carries a `PhantomData<proc_macro::TokenTree>`
+    /// that is `!Send`, so accepting one would taint this entire async
+    /// function and every caller above it (notably `evolution::rebirth`,
+    /// which the kernel needs to `tokio::spawn`). Stringification at the
+    /// caller side keeps the futures `Send` without losing any information —
+    /// `to_string()` was the only thing we ever did with the token stream.
+    pub async fn incubate(&self, mut source: String) -> Result<CompiledGen, IncubatorError> {
+        // Trailing newline so editors don't complain about the fossil.
+        if !source.ends_with('\n') {
+            source.push('\n');
+        }
+
         let generation = self.next_generation();
         let stem = format!("gen_{:03}", generation);
         let rs_path = self.inner.fossil_dir.join(format!("{stem}.rs"));
         let wasm_path = self.inner.fossil_dir.join(format!("{stem}.wasm"));
 
         tokio::fs::create_dir_all(&self.inner.fossil_dir).await?;
-        // Format: `TokenStream::to_string` produces a single line. That's
-        // ugly but valid Rust; rustc doesn't care, and the fossil is meant
-        // for forensic reading, not aesthetic appreciation. We add a
-        // trailing newline so editors don't complain.
-        let mut text = source.to_string();
-        text.push('\n');
-        tokio::fs::write(&rs_path, text).await?;
+        tokio::fs::write(&rs_path, source).await?;
 
         let permit = self
             .inner
@@ -258,15 +266,13 @@ impl IncubatorPool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proc_macro2::TokenStream;
-    use std::str::FromStr;
 
     #[tokio::test]
     async fn missing_rustc_surfaces_io_error() {
         let dir = std::env::temp_dir().join(format!("ecdysis-incubator-{}", std::process::id()));
         let pool = IncubatorPool::new(&dir, 1)
             .with_rustc("/definitely/not/a/real/rustc/binary");
-        let src = TokenStream::from_str("fn main() {}").unwrap();
+        let src = "fn main() {}".to_string();
         let err = pool.incubate(src).await.unwrap_err();
         assert!(matches!(err, IncubatorError::Io(_)), "got {err:?}");
         // The .rs file should still have been written before the rustc spawn
@@ -286,7 +292,7 @@ mod tests {
         let dir = std::env::temp_dir()
             .join(format!("ecdysis-incubator-fail-{}", std::process::id()));
         let pool = IncubatorPool::new(&dir, 1).with_rustc("/bin/false");
-        let src = TokenStream::from_str("fn main() {}").unwrap();
+        let src = "fn main() {}".to_string();
         let err = pool.incubate(src).await.unwrap_err();
         assert!(matches!(err, IncubatorError::Rustc { .. }), "got {err:?}");
         let _ = std::fs::remove_dir_all(&dir);
