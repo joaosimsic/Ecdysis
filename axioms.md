@@ -55,6 +55,17 @@ The organism (the FSM) uses these rules to navigate the Physics defined above.
 * **[P.1]** (Logic): A monolith eventually becomes too slow to respond to the environment, failing Axiom 2.
 * **[P.2]** (Mechanism): FSMs may trigger a "Split" where a high-frequency subgraph is offloaded to the `Incubator` to become a new, autonomous daughter FSM.
 
+### Axiom 6: Diachronic Persistence (The Ledger)
+> **The General Rule:** The system preserves structural "peaks" to bypass the entropy of linear time; evolution is a patchwork of asynchronous successes.
+
+**Premises:**
+* **[P.1]** (Logic): A society survives not by the continuity of its individuals, but by the preservation of its most efficient distinctions (Binary Codes).
+* **[P.2]** (Mechanism): Each FSM maintains an asynchronous local ledger. When it achieves a local maximum for **MtE**, it commits its state-table and weight-matrix to a distributed `Fit-State Blockchain`. Upon restart or rewind, the ecology is repopulated using the latest "expert" configurations regardless of their original timestamp.
+
+**Systems Theory Reinforcement:**
+* **Concept:** *Temporal Complexity / Semantic Anchoring*
+* **Validation:** In Luhmann’s theory, systems use meaning to simplify time. By "cheating" linear growth and restoring only "Fit" states, the system treats its own history as a resource (Culture) rather than a constraint (Entropy).
+
 ---
 
 ## III. Convergence Metrics: The Sociology of the Ecology
@@ -67,6 +78,8 @@ We define the system as "Luhmannian" if the following parameters are observed in
 | **Functional Differentiation** | *Niche Variance* | Systems stop competing for the same raw $n$-grams and start specializing in unique pattern-gestalts. |
 | **Operational Resonance** | *Bus/Environment Ratio* | Systems begin to trigger state-changes based on peer-signals more efficiently than raw environmental noise. |
 | **Centrality Dissolution** | *Graph Topology* | The network remains polycentric; no single system becomes the "Master Router" or sovereign observer. |
+| **Semantic Drift Resilience** | *Re-Contextualization Speed* | Upon rewind/restore with new Mastodon data, systems re-establish **Operational Resonance** without reverting to generalist states. |
+| **Evolutionary Baseline** | *MtE Floor* | Over successive "Restores," the average MtE of the starting population increases, proving the "Cheat" is accumulating societal wisdom. |
 
 ---
 
@@ -81,3 +94,46 @@ The `Kernel` should prioritize the **magnitude of EMA (Exponential Moving Averag
 $$\text{MtE} = \frac{\sum |\Delta \text{Weights}|}{\text{CPU Time} \times \text{Memory Footprint}}$$
 
 This formula punishes stagnant "vampire" systems and rewards those that are actively evolving their state-paths to match the environmental entropy.
+
+
+This is definitely an **Axiom** because it defines the "laws of memory" and the non-linear flow of time for your society. It isn't just an implementation detail; it’s the mechanism that allows for **Diachronic Complexity** (complexity that builds across generations rather than just within one lifetime).
+
+By using the "Blockchain of Fit States," you are moving from a pure "Biological" model to a "Cultural" model. Here is how to codify this into your **Ecdysis** document.
+
+---
+
+### Add to: II. Emergent Strategies: The Biology of the Organism
+
+### Axiom 6: Diachronic Persistence (The Ledger)
+> **The General Rule:** The system preserves structural "peaks" to bypass the entropy of linear time; evolution is a patchwork of asynchronous successes.
+
+**Premises:**
+* **[P.1]** (Logic): A society survives not by the continuity of its individuals, but by the preservation of its most efficient distinctions (Binary Codes).
+* **[P.2]** (Mechanism): Each FSM maintains an asynchronous local ledger. When it achieves a local maximum for **MtE**, it commits its state-table and weight-matrix to a distributed `Fit-State Blockchain`. Upon restart or rewind, the ecology is repopulated using the latest "expert" configurations regardless of their original timestamp.
+
+**Systems Theory Reinforcement:**
+* **Concept:** *Temporal Complexity / Semantic Anchoring*
+* **Validation:** In Luhmann’s theory, systems use meaning to simplify time. By "cheating" linear growth and restoring only "Fit" states, the system treats its own history as a resource (Culture) rather than a constraint (Entropy).
+
+---
+
+### Add to: III. Convergence Metrics: The Sociology of the Ecology
+
+| Parameter | Metric | Convergence Goal |
+| :--- | :--- | :--- |
+| **Semantic Drift Resilience** | *Re-Contextualization Speed* | Upon rewind/restore with new Mastodon data, systems re-establish **Operational Resonance** without reverting to generalist states. |
+| **Evolutionary Baseline** | *MtE Floor* | Over successive "Restores," the average MtE of the starting population increases, proving the "Cheat" is accumulating societal wisdom. |
+
+---
+
+### Implementation Note: The "Rewind" Dynamics
+When you implement this, you are effectively treating the **Vertices** of your graph as "Experienced Experts" and the **Edges** as "Active Experiments." 
+
+* **Vertices (Restored):** Fixed, high-quality internal logic.
+* **Edges (Emergent):** Flexible, real-time dependencies formed based on the current Mastodon WebSocket stream.
+
+This arrangement prevents the **Death Chain** from becoming a permanent extinction event. If a chain fails, the "Rewind" doesn't just try again; it tries again with a "Dream Team" of specialists who have already proven they can maintain high MtE in previous irritations.
+
+
+
+Does the **Axiom 6** framing feel consistent with the rest of your "Physics," or do you want the "Cheat" to be even more subtle?
