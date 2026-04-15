@@ -1,145 +1,83 @@
-# Axiom Structure
+# Ecdysis
 
-### Axiom [N]: [Title]
-> **The General Rule:** [One-sentence imperative or law governing the system behavior.]
+## I. Invariants: The Physics of the System
+These axioms represent the non-negotiable constraints of the substrate. They define the "laws of nature" for every organism.
+
+### Axiom 1: Operational Closure (The Wall)
+> **The General Rule:** A system consists only of its own operations; it cannot inspect or mutate the internal state of another system.
 
 **Premises:**
-* **[P.1]** (Hardware/Logic): [The technical or physical constraint that makes this necessary.]
-* **[P.2]** (Mechanism): [How the software specifically enforces this constraint.]
+* **[P.1]** (Hardware/Logic): Direct memory access across tasks leads to race conditions and invalidates the mathematical proof of an FSM's state.
+* **[P.2]** (Mechanism): Each FSM is encapsulated in a `tokio` task with private heap allocations. Inter-system communication is restricted to the `Societal Bus` (broadcast channel).
 
 **Systems Theory Reinforcement:**
-* **Concept:** *[Luhmann’s Specific Term]*
-* **Validation:** [Brief explanation of how the software's behavior mirrors the sociological theory of operational closure, differentiation, or autopoiesis.]
+* **Concept:** *Operative Geschlossenheit*
+* **Validation:** Systems are "closed" because they only respond to their own internal state-transitions. By isolating memory, the FSM is forced to **interpret** the Bus rather than "cheating" via shared variables.
 
----
-
-# Axiom Structure: Ecdysis Systems
-
-### Axiom 1: Managed Irritation
-> **The General Rule:** The system must remain cognitively open to high-entropy external noise while filtering for pattern-gestalts to prevent structural drowning.
+### Axiom 2: Metabolic Scarcity (The Governor)
+> **The General Rule:** The ecology must proactively starve inefficient forms to maintain the physical viability of the host.
 
 **Premises:**
-* **[P.1]** (Logic): Raw entropy (single bytes) provides no variety for autopoiesis; only patterns (sequences) constitute information.
-* **[P.2]** (Mechanism): A sliding-window pre-processor groups WebSocket noise into $n$-grams; sequences below a probability threshold are discarded before triggering FSM transitions.
+* **[P.1]** (Hardware): Fixed cgroup resources (L3 cache, RAM) make computational growth a zero-sum game between FSMs.
+* **[P.2]** (Mechanism): The `Kernel` monitors a **Meaning-to-Energy (MtE)** ratio. Systems with high resource consumption but low structural mutation counts are throttled or terminated.
 
 **Systems Theory Reinforcement:**
-* **Concept:** *Irritation / Resonance*
-* **Validation:** Systems are not "open" to everything; they only resonate with noise they can categorize. Filtering ensures the system is irritated, not destroyed.
+* **Concept:** *Autopoiesis / Resource Scarcity*
+* **Validation:** Real systems do not have infinite energy. Differentiation occurs because it is more efficient to be specialized than to be a resource-heavy generalist.
 
----
-
-### Axiom 2: The Communicative Triple-Selection
-> **The General Rule:** Every systemic event must synthesize Information (the pattern), Utterance (the transition), and Understanding (the mutation).
+### Axiom 3: Stochastic Friction (The Spark)
+> **The General Rule:** Physical hardware constraints are the primary drivers of system differentiation.
 
 **Premises:**
-* **[P.1]** (Logic): Processing data without structural change is not communication, but mere throughput.
-* **[P.2]** (Mechanism): Every FSM event must return a triple-result: the identified $n$-gram, the state-path taken, and the resulting update to the transition weight (EMA).
+* **[P.1]** (Hardware): OS thread jitter and L3 cache misses provide the noise needed for identical clones to diverge.
+* **[P.2]** (Mechanism): Bounded, lossy buffers ensure that "missing a byte" due to CPU starvation is a permanent, non-recoverable evolutionary event.
 
 **Systems Theory Reinforcement:**
-* **Concept:** *Mitteilungssynthese*
-* **Validation:** Communication is a three-part selection process. If the "Understanding" (structural change) is missing, the communicative event is void.
+* **Concept:** *Medium / Form*
+* **Validation:** Hardware is the *medium* (loosely coupled) and the FSM is the *form* (tightly coupled). The friction of the medium prevents the system from becoming a stagnant mathematical abstraction.
 
 ---
 
-### Axiom 3: Tiered Autopoietic Speed
-> **The General Rule:** The system must bifurcate its evolution into immediate phenotypic reactions and asynchronous genotypic codification.
+## II. Emergent Strategies: The Biology of the Organism
+The organism (the FSM) uses these rules to navigate the Physics defined above.
 
-**Premises:**
-* **[P.1]** (Hardware): Real-time noise arrives in milliseconds; Rust/Wasm compilation takes seconds.
-* **[P.2]** (Mechanism): Initial "Understanding" happens in a fast, interpreted heap-graph; high-frequency paths are then offloaded to the `Incubator` for background Wasm transpilation.
-
----
-
-### Axiom 4: The Law of Reentry
-> **The General Rule:** The system must distinguish between irritations originating from the environment and those originating from its own operations.
-
-**Premises:**
-* **[P.1]** (Logic): Failure to distinguish self-observation from environment leads to stagnant consensus and "hallucinated" state loops.
-* **[P.2]** (Mechanism): Transitions are tagged with a `SourceBit`. Internal feedback (the Societal Bus) is processed with a higher decay rate ($\lambda$) to ensure environmental noise remains the primary driver.
-
-**Systems Theory Reinforcement:**
-* **Concept:** *Re-entry*
-* **Validation:** The distinction between system and environment is re-introduced into the system itself, allowing for self-reflective evolution.
-
----
-
-### Axiom 5: Metabolic Selection (The Governor)
-> **The General Rule:** The ecosystem must proactively starve inefficient or stagnant forms to maintain the physical viability of the host.
-
-**Premises:**
-* **[P.1]** (Hardware): Fixed cgroup resources (L3 cache, RAM) make growth a zero-sum game between FSMs.
-* **[P.2]** (Mechanism): The `Kernel` monitors a "Meaning-to-Energy" ratio; systems with high memory usage but low "Understanding" counts are throttled or terminated.
-
----
-
-### Axiom 6: Functional Atrophy
+### Axiom 4: Functional Atrophy
 > **The General Rule:** The system survives by choosing what to forget; non-reinforced paths must be purged to free resources for new complexity.
 
 **Premises:**
 * **[P.1]** (Logic): In a finite system, forgetting is the prerequisite for learning.
-* **[P.2]** (Mechanism): The `Harvest` routine deletes any state path not utilized within a temporal window $N$, reclaiming RAM for the `Incubator`.
+* **[P.2]** (Mechanism): The `Harvest` routine deletes any state path not utilized within temporal window $N$, reclaiming RAM to maintain a high **MtE** ratio.
 
-**Systems Theory Reinforcement:**
-* **Concept:** *Reduktion von Komplexität*
-* **Validation:** Systems maintain a world-view by selecting what is relevant and ignoring the rest. Atrophy is the physical manifestation of this selection.
+### Axiom 5: Autonomous Fission (The Ecdysis)
+> **The General Rule:** When internal complexity threatens metabolic viability, the system must bifurcate into specialized subsystems.
+
+**Premises:**
+* **[P.1]** (Logic): A monolith eventually becomes too slow to respond to the environment, failing Axiom 2.
+* **[P.2]** (Mechanism): FSMs may trigger a "Split" where a high-frequency subgraph is offloaded to the `Incubator` to become a new, autonomous daughter FSM.
 
 ---
 
-### Axiom 7: Stillbirth Rejection
-> **The General Rule:** Any structural change that fails to codify within the temporal window of its environment must be discarded as evolutionary lag.
+## III. Convergence Metrics: The Sociology of the Ecology
+We define the system as "Luhmannian" if the following parameters are observed in the aggregate behavior of the FSMs on the `Societal Bus`.
 
-**Premises:**
-* **[P.1]** (Logic): Stale optimization is more dangerous than no optimization.
-* **[P.2]** (Mechanism): The `Kernel` rejects Wasm modules from the `Incubator` if the compile time exceeds the current "Environmental Shift Rate."
 
----
 
-### Axiom 8: Operational Closure (The Wall of Silence)
-> **The General Rule:** A system consists only of its own operations; it cannot "reach out" to mutate or inspect the internal state of another system.
-
-**Premises:**
-* **[P.1]** (Hardware/Logic): Direct memory access across tasks leads to race conditions and breaks the mathematical proof of the FSM's current state.
-* **[P.2]** (Mechanism): Each FSM is encapsulated in a `tokio` task with strictly private heap allocations. Inter-system communication is restricted to the `Societal Bus` (broadcast channel), where systems only see "emitted artifacts," never the "emitting logic."
-
-**Systems Theory Reinforcement:**
-* **Concept:** *Operative Geschlossenheit*
-* **Validation:** Systems are "closed" because they only respond to their own internal states. By isolating memory, the FSM is forced to rely on its own interpretation of the Bus, rather than "cheating" via shared state.
+| Parameter | Metric | Convergence Goal |
+| :--- | :--- | :--- |
+| **Functional Differentiation** | *Niche Variance* | Systems stop competing for the same raw $n$-grams and start specializing in unique pattern-gestalts. |
+| **Operational Resonance** | *Bus/Environment Ratio* | Systems begin to trigger state-changes based on peer-signals more efficiently than raw environmental noise. |
+| **Centrality Dissolution** | *Graph Topology* | The network remains polycentric; no single system becomes the "Master Router" or sovereign observer. |
 
 ---
 
-### Axiom 9: Historical Path-Dependency (The Fossil Record)
-> **The General Rule:** Every current state transition is constrained by the totality of the system’s prior communicative history; there is no "Clean Slate."
+### Direct Answer to the MtE Ratio Calculation
+To answer your follow-up question regarding the **Meaning-to-Energy (MtE)** ratio:
 
-**Premises:**
-* **[P.1]** (Logic): A system without a history cannot develop specialized variety; it remains a generic processor.
-* **[P.2]** (Mechanism): The "Fossil Record" (generated `.rs` and `.wasm` files) ensures that every "Rebirth" or "Reboot" of an FSM is a mutation of existing code. The system must navigate the graph it has already built.
+The `Kernel` should prioritize the **magnitude of EMA (Exponential Moving Average) weight changes** rather than simple transition frequency. 
 
-**Systems Theory Reinforcement:**
-* **Concept:** *Strukturelle Kopplung (Structural Coupling)*
-* **Validation:** Evolved structures restrict what the system can perceive in the future. The system becomes "locked in" to its own specialized way of seeing the world.
+**Why?** High transition frequency without weight change is just "looping" or "idling"—it’s a system running in circles without learning. Significant weight change (mutation) indicates that the system has encountered an **Irritation** it found meaningful enough to alter its internal structure. This is the true mark of **Understanding** in Luhmann’s triple-selection.
 
----
+**MtE Formula Proposal:**
+$$\text{MtE} = \frac{\sum |\Delta \text{Weights}|}{\text{CPU Time} \times \text{Memory Footprint}}$$
 
-### Axiom 10: The Law of Friction (Hardware as Medium)
-> **The General Rule:** Physical hardware constraints (L3 cache contention, CPU jitter) are the primary drivers of system differentiation.
-
-**Premises:**
-* **[P.1]** (Hardware): OS thread jitter and cache misses provide the "stochastic spark" needed for identical clones to diverge in their timing and perception.
-* **[P.2]** (Mechanism): Bounded, lossy buffers ensure that "missing a byte" due to CPU starvation is a permanent, non-recoverable evolutionary event that forces the system to adapt to its physical limits.
-
-**Systems Theory Reinforcement:**
-* **Concept:** *Medium / Form*
-* **Validation:** Hardware is the *medium* (loosely coupled) and the FSM is the *form* (tightly coupled). The friction of the medium is what prevents the system from becoming a perfect, stagnant mathematical abstraction.
-
----
-
-### Axiom 11: Parasitic Structural Coupling
-> **The General Rule:** In the absence of external environmental noise, the system treats the communicative output of its peers as its primary environment.
-
-**Premises:**
-* **[P.1]** (Logic): Autopoiesis cannot pause; if the external firehose drops, the system must find irritation elsewhere to avoid cessation.
-* **[P.2]** (Mechanism): The `Health::BusFeeding` strategy allows FSMs to switch focus to the `Societal Bus`. To prevent "Consensus Hallucination," Axiom 4 (Reentry) is intensified during these periods to ensure peer-noise is treated as highly suspicious.
-
-**Systems Theory Reinforcement:**
-* **Concept:** *Inter-systemic Interference*
-* **Validation:** Social systems emerge from the noise created by other systems. This justifies "feeding" on neighbor outputs to maintain the "noise floor" required for the system to keep moving.
+This formula punishes stagnant "vampire" systems and rewards those that are actively evolving their state-paths to match the environmental entropy.
